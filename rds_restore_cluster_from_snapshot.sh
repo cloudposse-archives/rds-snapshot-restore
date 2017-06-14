@@ -18,37 +18,7 @@ CLUSTER_TO_DELETE="${CLUSTER}${TO_DELETE_SUFFIX}"
 
 DRY_RUN=$(DRY_RUN:-false)
 
-####==================== Restoring cluster =================================#####
-
-copy_cluster "$CLUSTER" "${CLUSTER_TMP}" "${SNAPSHOT_ID}"
-
-readarray -t INSTANCES < <( aws --region $REGION rds describe-db-instances --filter "Name=db-cluster-id,Values=${CLUSTER}" | \
-                              jq -cr '.DBInstances[].DBInstanceIdentifier')
-
-for INSTANCE in "${INSTANCES[@]}"; do
-  copy_instance "$INSTANCE" "${INSTANCE}${TMP_SUFFIX}" "${CLUSTER_TMP}"
-done
-
-wait_cluster_state "$CLUSTER_TMP" "available"
-wait_all_instances_in_cluster_state "${CLUSTER_TMP}" "available"
-
-cluster_change_master_password "${CLUSTER_TMP}" "${MASTER_PASSWORD}"
-
-rename_cluster "${CLUSTER}" "${CLUSTER_TO_DELETE}"
-rename_cluster "${CLUSTER_TMP}" "${CLUSTER}"
-
-####==================== Rename instances =================================#####
-
-for INSTANCE in "${INSTANCES[@]}"; do
-  rename_instance "${INSTANCE}" "${INSTANCE}${TO_DELETE_SUFFIX}"
-done
-
-for INSTANCE in "${INSTANCES[@]}"; do
-  rename_instance "${INSTANCE}${TMP_SUFFIX}" "${INSTANCE}"
-done
-
-echo "......................................................... Done"
-
+###======================Functions===========================================####
 
 wait_instance_state() {
   INSTANCE=$1
@@ -239,3 +209,35 @@ instance_exists() {
                           jq -cr '.DBInstances | length' )
   echo [ $TMP_INSTANCE_EXISTS -neq 0 ]
 }
+
+####==================== Restoring cluster =================================#####
+
+copy_cluster "$CLUSTER" "${CLUSTER_TMP}" "${SNAPSHOT_ID}"
+
+readarray -t INSTANCES < <( aws --region $REGION rds describe-db-instances --filter "Name=db-cluster-id,Values=${CLUSTER}" | \
+                              jq -cr '.DBInstances[].DBInstanceIdentifier')
+
+for INSTANCE in "${INSTANCES[@]}"; do
+  copy_instance "$INSTANCE" "${INSTANCE}${TMP_SUFFIX}" "${CLUSTER_TMP}"
+done
+
+wait_cluster_state "$CLUSTER_TMP" "available"
+wait_all_instances_in_cluster_state "${CLUSTER_TMP}" "available"
+
+cluster_change_master_password "${CLUSTER_TMP}" "${MASTER_PASSWORD}"
+
+rename_cluster "${CLUSTER}" "${CLUSTER_TO_DELETE}"
+rename_cluster "${CLUSTER_TMP}" "${CLUSTER}"
+
+####==================== Rename instances =================================#####
+
+for INSTANCE in "${INSTANCES[@]}"; do
+  rename_instance "${INSTANCE}" "${INSTANCE}${TO_DELETE_SUFFIX}"
+done
+
+for INSTANCE in "${INSTANCES[@]}"; do
+  rename_instance "${INSTANCE}${TMP_SUFFIX}" "${INSTANCE}"
+done
+
+echo "......................................................... Done"
+
