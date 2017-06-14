@@ -5,26 +5,34 @@ set -e
 CLUSTER=$1
 SNAPSHOT_ID=$2
 
-MASTER_PASSWORD=$(MASTER_PASSWORD:-)
+MASTER_PASSWORD=${MASTER_PASSWORD:-}
 
-REGION=$(REGION:-"us-west-2")
-SLEEP=$(SLEEP:-10)
+REGION=${REGION:-"us-west-2"}
+SLEEP=${SLEEP:-10}
 
-TMP_SUFFIX=$(TMP_SUFFIX:-"-tmp")
-TO_DELETE_SUFFIX=$(TO_DELETE_SUFFIX:-"-to-delete")
+TMP_SUFFIX=${TMP_SUFFIX:-"-tmp"}
+TO_DELETE_SUFFIX=${TO_DELETE_SUFFIX:-"-to-delete"}
 
 CLUSTER_TMP="${CLUSTER}${TMP_SUFFIX}"
 CLUSTER_TO_DELETE="${CLUSTER}${TO_DELETE_SUFFIX}"
 
-DRY_RUN=$(DRY_RUN:-false)
+DRY_RUN=${DRY_RUN:-false}
 
 ###======================Functions===========================================####
 
+instance_exists() {
+  local INSTANCE=$1
+
+  local TMP_INSTANCE_EXISTS=$( aws --region $REGION rds describe-db-instances --filter "Name=db-instance-id,Values=${INSTANCE}" | \
+                          jq -cr '.DBInstances | length' )
+  [ "$TMP_INSTANCE_EXISTS" == "0" ] && echo 1 || echo 0
+}
+
 wait_instance_state() {
-  INSTANCE=$1
-  STATE=$2
+  local INSTANCE=$1
+  local STATE=$2
   while true; do
-    INSTANCE_STATUS=$(aws --region $REGION rds describe-db-instances --filter "Name=db-instance-id,Values=${INSTANCE}" | \
+    local INSTANCE_STATUS=$(aws --region $REGION rds describe-db-instances --filter "Name=db-instance-id,Values=${INSTANCE}" | \
       jq -cr '.DBInstances[].DBInstanceStatus')
 
     if [[ $DRY_RUN == "true" ||  "$INSTANCE_STATUS" == "${STATE}" ]]; then
@@ -35,11 +43,22 @@ wait_instance_state() {
   done
 }
 
-rename_instance() {
-  INSTANCE_NAME=$1
-  NEW_INSTANCE_NAME=$2
+wait_instance_not_exists() {
+  local INSTANCE=$1
+  while true; do
+    if [[ $DRY_RUN == "true" ||  ! $(instance_exists "$INSTANCE") ]]; then
+      break;
+    fi
+    echo "Instance ${INSTANCE} is ${INSTANCE_STATUS}"
+    sleep 1
+  done
+}
 
-  if [ ! $(instance_exists "$INSTANCE_NAME") ]
+rename_instance() {
+  local INSTANCE_NAME=$1
+  local NEW_INSTANCE_NAME=$2
+
+  if [[ $(instance_exists "$INSTANCE_NAME") ]]
   then
     [ $DRY_RUN == "true" ] ||  aws --region $REGION rds modify-db-instance \
                                     --db-instance-identifier "${INSTANCE_NAME}" \
@@ -54,11 +73,27 @@ rename_instance() {
   fi
 }
 
+delete_instance() {
+  local INSTANCE_NAME=$1
+
+  if [[ $(instance_exists "$INSTANCE_NAME") ]]
+  then
+    [ $DRY_RUN == "true" ] ||  aws --region $REGION rds delete-db-instance \
+                                    --db-instance-identifier "${INSTANCE_NAME}" \
+    echo "Delete instance ${INSTANCE_NAME}"
+
+    wait_instance_state "${INSTANCE_NAME}" "deleting"
+  else
+      echo "WARNING: Instance ${INSTANCE_NAME} not exists"
+  fi
+}
+
+
 wait_cluster_state() {
-  CLUSTER=$1
-  STATE=$2
+  local CLUSTER=$1
+  local STATE=$2
   while true; do
-    CLUSTER_STATUS=$(aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$CLUSTER" | \
+    local CLUSTER_STATUS=$(aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$CLUSTER" | \
       jq -cr '.DBClusters[0].Status')
 
     if [[ $DRY_RUN == "true" ||  "$CLUSTER_STATUS" == "${STATE}" ]]; then
@@ -74,8 +109,8 @@ wait_all_instances_in_cluster_state() {
   local CLUSTER=$1
   local STATE=$2
   while true; do
-    COUNT_NOT_READY_INSTANCES=$(aws --region $REGION rds describe-db-instances --filter "Name=db-cluster-id,Values=${CLUSTER}" | \
-      jq -cr '.DBInstances | map( select( .DBInstanceStatus != "${STATE}" )) | length')
+    local COUNT_NOT_READY_INSTANCES=$(aws --region $REGION rds describe-db-instances --filter "Name=db-cluster-id,Values=${CLUSTER}" | \
+      jq -cr ".DBInstances | map( select( .DBInstanceStatus != \"${STATE}\" )) | length")
 
     if [[ $DRY_RUN == "true" || "$COUNT_NOT_READY_INSTANCES" == "0" ]]; then
       echo "All instances in cluster ${CLUSTER} are ${STATE}"
@@ -138,7 +173,7 @@ copy_cluster() {
 EOF
   )
 
-  CLUSTER_JSON=$( aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$SOURCE" | jq -cM "$CLUSTER_MAP_QUERY" )
+  local CLUSTER_JSON=$( aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$SOURCE" | jq -cM "$CLUSTER_MAP_QUERY" )
 
   if [ "$CLUSTER_JSON" == "" ]
   then
@@ -146,7 +181,7 @@ EOF
    exit 1;
   fi
 
-  TMP_CLUSTER_EXISTS=$( aws --region $REGION rds describe-db-clusters --filter "Name=db-cluster-id,Values=${TARGET}" | \
+  local TMP_CLUSTER_EXISTS=$( aws --region $REGION rds describe-db-clusters --filter "Name=db-cluster-id,Values=${TARGET}" | \
                         jq -cr '.DBClusters | length' )
 
   if [ $TMP_CLUSTER_EXISTS -eq 0 ]
@@ -190,9 +225,9 @@ copy_instance() {
 EOF
   )
 
-  if [ $(instance_exists "$TARGET") ]
+  if [[ ! $(instance_exists "$TARGET") ]];
   then
-    INSTANCE_JSON=$( aws --region $REGION rds describe-db-instances --db-instance-identifier "$SOURCE" |
+    local INSTANCE_JSON=$( aws --region $REGION rds describe-db-instances --db-instance-identifier "$SOURCE" |
                   jq -cM "$INSTANCE_MAP_QUERY" )
 
     [ $DRY_RUN == "true" ] || aws --region $REGION rds create-db-instance --cli-input-json "$INSTANCE_JSON"
@@ -202,13 +237,6 @@ EOF
   fi
 }
 
-instance_exists() {
-  local INSTANCE=$1
-
-  TMP_INSTANCE_EXISTS=$( aws --region $REGION rds describe-db-instances --filter "Name=db-instance-id,Values=${INSTANCE}" | \
-                          jq -cr '.DBInstances | length' )
-  echo [ $TMP_INSTANCE_EXISTS -neq 0 ]
-}
 
 ####==================== Restoring cluster =================================#####
 
@@ -220,10 +248,8 @@ readarray -t INSTANCES < <( aws --region $REGION rds describe-db-instances --fil
 for INSTANCE in "${INSTANCES[@]}"; do
   copy_instance "$INSTANCE" "${INSTANCE}${TMP_SUFFIX}" "${CLUSTER_TMP}"
 done
-
 wait_cluster_state "$CLUSTER_TMP" "available"
 wait_all_instances_in_cluster_state "${CLUSTER_TMP}" "available"
-
 cluster_change_master_password "${CLUSTER_TMP}" "${MASTER_PASSWORD}"
 
 rename_cluster "${CLUSTER}" "${CLUSTER_TO_DELETE}"
@@ -239,5 +265,15 @@ for INSTANCE in "${INSTANCES[@]}"; do
   rename_instance "${INSTANCE}${TMP_SUFFIX}" "${INSTANCE}"
 done
 
-echo "......................................................... Done"
+###================== Delete instances ====================================####
 
+for INSTANCE in "${INSTANCES[@]}"; do
+  delete_instance "${INSTANCE}${TO_DELETE_SUFFIX}"
+done
+
+for INSTANCE in "${INSTANCES[@]}"; do
+  wait_instance_not_exists "${INSTANCE}${TO_DELETE_SUFFIX}"
+done
+
+
+echo "......................................................... Done"
