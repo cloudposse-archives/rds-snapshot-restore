@@ -74,7 +74,7 @@ rename_instance() {
     wait_instance_state "${INSTANCE_NAME}" "renaming"
     wait_instance_state "${NEW_INSTANCE_NAME}" "available"
   else
-      echo "WARNING: Instance ${INSTANCE_NAME} not exists"
+      echo "WARNING: Instance ${INSTANCE_NAME} does not exist"
   fi
 }
 
@@ -89,7 +89,7 @@ delete_instance() {
 
     wait_instance_state "${INSTANCE_NAME}" "deleting"
   else
-      echo "WARNING: Instance ${INSTANCE_NAME} not exists"
+      echo "WARNING: Instance ${INSTANCE_NAME} does not exist"
   fi
 }
 
@@ -209,7 +209,7 @@ EOF
 
   if [ "$CLUSTER_JSON" == "" ]
   then
-   echo "ERROR: Cluster ${SOURCE} not exists";
+   echo "ERROR: Cluster ${SOURCE} does not exist";
    exit 1;
   fi
 
