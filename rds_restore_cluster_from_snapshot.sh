@@ -84,7 +84,7 @@ delete_instance() {
   if [[ $(instance_exists "$INSTANCE_NAME") == "true" ]]
   then
     [ $DRY_RUN == "true" ] ||  aws --region $REGION rds delete-db-instance \
-                                    --db-instance-identifier "${INSTANCE_NAME}" \
+                                    --db-instance-identifier "${INSTANCE_NAME}"
     echo "Delete instance ${INSTANCE_NAME}"
 
     wait_instance_state "${INSTANCE_NAME}" "deleting"
