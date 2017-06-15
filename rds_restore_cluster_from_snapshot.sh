@@ -163,7 +163,8 @@ delete_cluster() {
   echo "Delete cluster ${CLUSTER_NAME}"
 
   [ $DRY_RUN == "true" ] || aws --region $REGION rds delete-db-cluster \
-                                --db-cluster-identifier "${CLUSTER_NAME}"
+                                --db-cluster-identifier "${CLUSTER_NAME}" \
+                                --skip-final-snapshot
 
   wait_cluster_state "$CLUSTER_NAME" "deleting"
   wait_cluster_not_exists "${CLUSTER_NAME}"
