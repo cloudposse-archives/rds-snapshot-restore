@@ -127,6 +127,20 @@ wait_all_instances_in_cluster_state() {
   done
 }
 
+wait_cluster_not_exists() {
+  local CLUSTER=$1
+  while true; do
+    aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$CLUSTER" > /dev/null
+
+    if [[ $DRY_RUN == "true" ||  "$?" != "0" ]]; then
+      break;
+    fi
+
+    echo "Cluster ${CLUSTER} exists"
+    sleep 1
+  done
+}
+
 
 rename_cluster() {
   local CLUSTER_NAME=$1
@@ -141,6 +155,18 @@ rename_cluster() {
 
   wait_cluster_state "$CLUSTER_NAME" "renaming"
   wait_cluster_state "$NEW_CLUSTER_NAME" "available"
+}
+
+delete_cluster() {
+  local CLUSTER_NAME=$1
+
+  echo "Delete cluster ${CLUSTER_NAME}"
+
+  [ $DRY_RUN == "true" ] || aws --region $REGION rds delete-db-cluster \
+                                --db-cluster-identifier "${CLUSTER_NAME}"
+
+  wait_cluster_state "$CLUSTER_NAME" "deleting"
+  wait_cluster_not_exists "${CLUSTER_NAME}"
 }
 
 cluster_change_master_password() {
@@ -280,5 +306,6 @@ for INSTANCE in "${INSTANCES[@]}"; do
   wait_instance_not_exists "${INSTANCE}${TO_DELETE_SUFFIX}"
 done
 
+delete_cluster "${CLUSTER_TO_DELETE}"
 
 echo "......................................................... Done"
