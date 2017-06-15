@@ -25,7 +25,12 @@ instance_exists() {
 
   local TMP_INSTANCE_EXISTS=$( aws --region $REGION rds describe-db-instances --filter "Name=db-instance-id,Values=${INSTANCE}" | \
                           jq -cr '.DBInstances | length' )
-  [ "$TMP_INSTANCE_EXISTS" == "0" ] && echo 1 || echo 0
+  if [ "$TMP_INSTANCE_EXISTS" == "0" ]
+  then
+    echo false
+  else
+    echo true
+  fi
 }
 
 wait_instance_state() {
@@ -46,7 +51,7 @@ wait_instance_state() {
 wait_instance_not_exists() {
   local INSTANCE=$1
   while true; do
-    if [[ $DRY_RUN == "true" ||  ! $(instance_exists "$INSTANCE") ]]; then
+    if [[ $DRY_RUN == "true" ||  $(instance_exists "$INSTANCE") == "false" ]]; then
       break;
     fi
     echo "Instance ${INSTANCE} is ${INSTANCE_STATUS}"
@@ -58,7 +63,7 @@ rename_instance() {
   local INSTANCE_NAME=$1
   local NEW_INSTANCE_NAME=$2
 
-  if [[ $(instance_exists "$INSTANCE_NAME") ]]
+  if [[ $(instance_exists "$INSTANCE_NAME") == "true" ]]
   then
     [ $DRY_RUN == "true" ] ||  aws --region $REGION rds modify-db-instance \
                                     --db-instance-identifier "${INSTANCE_NAME}" \
@@ -76,7 +81,7 @@ rename_instance() {
 delete_instance() {
   local INSTANCE_NAME=$1
 
-  if [[ $(instance_exists "$INSTANCE_NAME") ]]
+  if [[ $(instance_exists "$INSTANCE_NAME") == "true" ]]
   then
     [ $DRY_RUN == "true" ] ||  aws --region $REGION rds delete-db-instance \
                                     --db-instance-identifier "${INSTANCE_NAME}" \
@@ -225,7 +230,7 @@ copy_instance() {
 EOF
   )
 
-  if [[ ! $(instance_exists "$TARGET") ]];
+  if [[ $(instance_exists "$TARGET") == "false" ]];
   then
     local INSTANCE_JSON=$( aws --region $REGION rds describe-db-instances --db-instance-identifier "$SOURCE" |
                   jq -cM "$INSTANCE_MAP_QUERY" )
