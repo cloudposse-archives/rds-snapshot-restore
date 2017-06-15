@@ -205,6 +205,13 @@ copy_cluster() {
 EOF
   )
 
+  aws --region $REGION rds describe-db-cluster-snapshots --db-cluster-snapshot-identifier=$SNAPSHOT > /dev/null
+
+  if [ $? -ne 0 ]; then
+   echo "ERROR: Snapshot ${SNAPSHOT} does not exist";
+   exit 1;
+  fi
+
   local CLUSTER_JSON=$( aws --region $REGION rds describe-db-clusters --db-cluster-identifier "$SOURCE" | jq -cM "$CLUSTER_MAP_QUERY" )
 
   if [ "$CLUSTER_JSON" == "" ]
@@ -268,7 +275,6 @@ EOF
     echo "WARNING: Instance ${TARGET} exists"
   fi
 }
-
 
 ####==================== Restoring cluster =================================#####
 
